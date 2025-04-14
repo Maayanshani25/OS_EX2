@@ -1,0 +1,27 @@
+Thread:m Number:(0) 0
+Init Quantum num is: 1
+m0 Quanta:1
+m0 Quanta:2
+m0 Quanta:3
+m spawns f at (1) 1
+m spawns g at (2) 2
+f1 Quanta:1
+g2 Quanta:1
+m0 Quanta:4
+f1 Quanta:2
+g2 Quanta:2
+m0 Quanta:5
+f1 Quanta:3
+g2 Quanta:3
+m0 Quanta:6
+f1 Quanta:4
+g2 Quanta:4
+m0 Quanta:7
+f1 Quanta:5
+f END
+g2 Quanta:5
+g END
+m0 Quanta:8
+m0 Quanta:9
+m0 Quanta:10
+Total Quantums: 20
