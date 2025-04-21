@@ -14,4 +14,5 @@ add_executable(OS_EX2
         Tests/test2_two_thread.cpp
         uthreads.cpp
         constants.h
-        uthreads.h)
+        uthreads.h
+        uthreads.cpp)
