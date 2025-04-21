@@ -77,7 +77,7 @@ void jump_to_thread(int tid)
 void yield(void)
 {
     int ret_val = sigsetjmp(env[current_thread], 1);
-    printf("yield: ret_val=%d\n", ret_val);
+    printf("yield: ret_val=%d, thread=%d\n", ret_val, current_thread);
     bool did_just_save_bookmark = ret_val == 0;
 //    bool did_jump_from_another_thread = ret_val != 0;
     if (did_just_save_bookmark)
