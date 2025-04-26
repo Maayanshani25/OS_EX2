@@ -1,18 +1,21 @@
 cmake_minimum_required(VERSION 3.22)
 project(OS_EX2)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 11)
 
 include_directories(Resources)
 
-add_executable(OS_EX2
-        Resources/demo_itimer.c
-        Resources/demo_jmp.c
-        Resources/demo_singInt_handler.c
-        Resources/uthreads.h
-        test0_sanity.cpp
-        Tests/test2_two_thread.cpp
+# Each test should be a separate executable!
+add_executable(test0_sanity
         uthreads.cpp
+        test0_sanity.cpp
         constants.h
         uthreads.h
-        uthreads.cpp)
+)
+
+add_executable(test2_two_thread
+        uthreads.cpp
+        test2_two_thread.cpp
+        constants.h
+        uthreads.h
+)
