@@ -10,7 +10,7 @@ add_executable(OS_EX2
         Resources/demo_jmp.c
         Resources/demo_singInt_handler.c
         Resources/uthreads.h
-        Tests/test0_sanity.cpp
+        test0_sanity.cpp
         Tests/test2_two_thread.cpp
         uthreads.cpp
         constants.h
