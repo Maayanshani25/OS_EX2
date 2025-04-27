@@ -8,18 +8,55 @@
 #include <iostream>
 #include <setjmp.h>
 #include <unordered_map>
-#include <setjmp.h>
 #include <sys/time.h>
-#include <signal.h>
+#include <memory>
 
 /**
  * todo:
  * 1. Re-design all initialize error checks
  */
 
+#ifdef __x86_64__
+/* code for 64 bit Intel arch */
+
 typedef unsigned long address_t;
 #define JB_SP 6
 #define JB_PC 7
+
+/* A translation is required when using an address of a variable.
+   Use this as a black box in your code. */
+address_t translate_address(address_t addr)
+{
+  address_t ret;
+  asm volatile("xor    %%fs:0x30,%0\n"
+               "rol    $0x11,%0\n"
+      : "=g" (ret)
+      : "0" (addr));
+  return ret;
+}
+
+#else
+/* code for 32 bit Intel arch */
+
+typedef unsigned int address_t;
+#define JB_SP 4
+#define JB_PC 5
+
+
+/* A translation is required when using an address of a variable.
+   Use this as a black box in your code. */
+address_t translate_address(address_t addr)
+{
+    address_t ret;
+    asm volatile("xor    %%gs:0x18,%0\n"
+                 "rol    $0x9,%0\n"
+    : "=g" (ret)
+    : "0" (addr));
+    return ret;
+}
+
+
+#endif
 
 typedef struct Thread {
     int id;
@@ -33,29 +70,20 @@ typedef struct Thread {
 
 int quantum_usecs_total = 0;
 InitializationState initialized = UNINITIALIZED;
-Thread *runningThread;
+int running_tid = MAIN_THREAD_ID; // CHANGED: use thread id instead of pointer
 std::queue<Thread *> readyQueue;
 std::priority_queue<int, std::vector<int>, std::greater<int>> available_ids;
-std::unordered_map<int, Thread *> thread_map;
+std::unordered_map<int, std::unique_ptr<Thread>> thread_map;
 std::unordered_map<int, int> sleeping_threads;
 
 static struct itimerval timer;
 
-/* A translation is required when using an address of a variable.
-   Use this as a black box in your code. */
-address_t translate_address(address_t addr) {
-    address_t ret;
-    asm volatile("xor    %%fs:0x30,%0\n"
-                 "rol    $0x11,%0\n"
-        : "=g" (ret)
-        : "0" (addr));
-    return ret;
-}
+
 
 void remove_thread_from_ready_queue(int tid);
 void free_allocated_memory();
 void switch_to_next_thread();
-Thread* setup_thread(int tid, thread_entry_point entry_point);
+std::unique_ptr<Thread> setup_thread(int tid, thread_entry_point entry_point);
 void timer_handler(int sig);
 
 int uthread_init(int quantum_usecs) {
@@ -72,14 +100,12 @@ int uthread_init(int quantum_usecs) {
     quantum_usecs_total = 1; // After init, already inside first quantum
     initialized = INITIALIZED;
 
-    Thread *main_thread = new Thread{
-        .id = MAIN_THREAD_ID,
-        .state = RUNNING,
-        .quantum_count = 1
-    };
+    std::unique_ptr<Thread> main_thread(new Thread());
+    main_thread->id = MAIN_THREAD_ID;
+    main_thread->state = RUNNING;
+    main_thread->quantum_count = 1;
 
-    runningThread = main_thread;
-    thread_map[MAIN_THREAD_ID] = main_thread;
+    thread_map[MAIN_THREAD_ID] = std::move(main_thread);
 
     for (int i = 1; i < MAX_THREAD_NUM; ++i) {
         available_ids.push(i);
@@ -125,13 +151,13 @@ int uthread_spawn(thread_entry_point entry_point) {
     int new_tid = available_ids.top();
     available_ids.pop();
 
-    Thread *new_thread = setup_thread(new_tid, entry_point);
+    auto new_thread = setup_thread(new_tid, entry_point);
 
     // Add the thread to the ready queue
-    readyQueue.push(new_thread);
+    readyQueue.push(new_thread.get());
 
     // Add the thread to the thread map
-    thread_map[new_tid] = new_thread;
+    thread_map[new_tid] = std::move(new_thread);
 
     return new_tid;
 }
@@ -152,13 +178,13 @@ int uthread_terminate(int tid) {
         exit(0); // terminate the process
     }
 
-    if (tid == runningThread->id) {
+    if (tid == running_tid) {
         // Self-terminate
-        delete runningThread;
         thread_map.erase(tid);
 
         switch_to_next_thread();
         // Doesn't return
+
     }
 
     // If the thread is READY, remove it from the readyQueue
@@ -167,7 +193,6 @@ int uthread_terminate(int tid) {
     }
 
     // Free and remove the thread
-    delete thread_map[tid];
     thread_map.erase(tid);
 
     return SUCCESS;
@@ -194,7 +219,7 @@ int uthread_block(int tid) {
         return ERROR;
     }
 
-    Thread *thread = thread_map[tid];
+    Thread *thread = thread_map[tid].get();
 
     // Already blocked: do nothing
     if (thread->state == BLOCKED) {
@@ -202,9 +227,8 @@ int uthread_block(int tid) {
     }
 
     // Case: thread blocks itself
-    if (tid == runningThread->id) {
+    if (tid == running_tid) {
         thread->state = BLOCKED;
-
         switch_to_next_thread();
     }
 
@@ -233,7 +257,7 @@ int uthread_resume(int tid) {
         return ERROR;
     }
 
-    Thread *thread = thread_map[tid];
+    Thread *thread = thread_map[tid].get();
 
     if (thread->state == BLOCKED) {
         thread->state = READY;
@@ -250,31 +274,26 @@ int uthread_sleep(int num_quantums) {
         return ERROR;
     }
 
-    if (runningThread->id == MAIN_THREAD_ID) {
+    if (running_tid == MAIN_THREAD_ID) {
         std::cerr << MAIN_THREAD_SLEEP_ERROR << std::endl;
         return ERROR;
     }
-
-    int tid = runningThread->id;
-
+    
     // Mark thread as sleeping
-    sleeping_threads[tid] = num_quantums;
+    sleeping_threads[running_tid] = num_quantums;
 
     // Block the running thread
-    runningThread->state = BLOCKED;
-
+    thread_map[running_tid]->state = BLOCKED;
     return SUCCESS;
 }
 
 void free_allocated_memory() {
-    for (auto &pair: thread_map) {
-        delete pair.second;
-    }
+    // Free all threads
     thread_map.clear();
 }
 
 int uthread_get_tid() {
-    return runningThread->id;
+    return running_tid;
 }
 
 int uthread_get_total_quantums() {
@@ -312,17 +331,17 @@ void timer_handler(int sig) {
     }
     for (int tid: threads_to_wake) {
         sleeping_threads.erase(tid);
-        Thread *t = thread_map[tid];
-        t->state = READY;
-        readyQueue.push(t);
+        thread_map[tid]->state = READY;
+        readyQueue.push(thread_map[tid].get());
     }
 
     // ⬇️ First: increment running thread because it finished a quantum
-    runningThread->quantum_count++;
+    thread_map[running_tid]->quantum_count++;
     quantum_usecs_total++;
 
     if (!readyQueue.empty()) {
-        readyQueue.push(runningThread); // Push current back to ready
+        readyQueue.push(thread_map[running_tid].get()); // Push current back to
+        // ready
         switch_to_next_thread();        // Switch
     }
     // Else: if no other thread, runningThread keeps running (no switch)
@@ -339,15 +358,16 @@ void timer_handler(int sig) {
  * @param tid The thread ID to initialize.
  * @param entry_point A function pointer representing the thread's starting function.
  */
-Thread* setup_thread(int new_tid, thread_entry_point entry_point) {
+std::unique_ptr<Thread> setup_thread(int new_tid, thread_entry_point
+entry_point) {
 
-    Thread* new_thread = new Thread{
-        .id = new_tid,
-        .state = READY,
-        .quantum_count = 0
-    };
+  std::unique_ptr<Thread> new_thread(new Thread());
+  new_thread->id = new_tid;
+  new_thread->state = READY;
+  new_thread->quantum_count = 0;
 
-    address_t sp = (address_t) (new_thread->stack + STACK_SIZE
+
+  address_t sp = (address_t) (new_thread->stack + STACK_SIZE
                                 - sizeof(address_t));
     address_t pc = (address_t) entry_point;
 
@@ -366,17 +386,18 @@ Thread* setup_thread(int new_tid, thread_entry_point entry_point) {
  * and jumps to its execution context using siglongjmp.
  */
 void switch_to_next_thread() {
-    int ret_val = sigsetjmp(runningThread->env, 1);
+    int ret_val = sigsetjmp(thread_map[running_tid]->env, 1);
     if (ret_val == 1) {
         // Coming back after siglongjmp -> just continue running
         return;
     }
 
     // Switch to next thread
-    runningThread = readyQueue.front();
+    Thread* next = readyQueue.front();
     readyQueue.pop();
-    runningThread->state = RUNNING;
-    siglongjmp(runningThread->env, 1);
+    next->state = RUNNING;
+    running_tid = next->id;
+    siglongjmp(next->env, 1);
 }
 
 void remove_thread_from_ready_queue(int tid) {
@@ -388,5 +409,5 @@ void remove_thread_from_ready_queue(int tid) {
             tempQueue.push(t);
         }
     }
-    readyQueue = tempQueue;
+    readyQueue = std::move(tempQueue);
 }
