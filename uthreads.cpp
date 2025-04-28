@@ -69,6 +69,7 @@ typedef struct Thread {
 } Thread;
 
 int quantum_usecs_total = 0;
+int to_delete_tid = -1;
 InitializationState initialized = UNINITIALIZED;
 int running_tid = MAIN_THREAD_ID; // CHANGED: use thread id instead of pointer
 std::queue<Thread *> readyQueue;
@@ -76,7 +77,7 @@ std::priority_queue<int, std::vector<int>, std::greater<int>> available_ids;
 std::unordered_map<int, std::unique_ptr<Thread>> thread_map;
 std::unordered_map<int, int> sleeping_threads;
 
-static struct itimerval timer;
+static struct itimerval timer;      
 
 
 
@@ -102,7 +103,7 @@ int uthread_init(int quantum_usecs) {
 
     std::unique_ptr<Thread> main_thread(new Thread());
     main_thread->id = MAIN_THREAD_ID;
-    main_thread->state = RUNNING;
+    main_thread->state = RUNNING;               
     main_thread->quantum_count = 1;
 
     thread_map[MAIN_THREAD_ID] = std::move(main_thread);
@@ -180,7 +181,7 @@ int uthread_terminate(int tid) {
 
     if (tid == running_tid) {
         // Self-terminate
-        thread_map.erase(tid);
+        to_delete_tid = tid;
 
         switch_to_next_thread();
         // Doesn't return
@@ -388,7 +389,13 @@ entry_point) {
 void switch_to_next_thread() {
     int ret_val = sigsetjmp(thread_map[running_tid]->env, 1);
     if (ret_val == 1) {
-        // Coming back after siglongjmp -> just continue running
+
+      if (to_delete_tid != -1) {
+        thread_map.erase(to_delete_tid); // Now safe
+        available_ids.push(to_delete_tid);
+        to_delete_tid = -1;
+      }
+        
         return;
     }
 
