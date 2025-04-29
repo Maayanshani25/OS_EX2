@@ -491,19 +491,17 @@ void alert_sleep_block() {
  * @param tid The thread ID to initialize.
  * @param entry_point A function pointer representing the thread's starting function.
  */
-std::unique_ptr<Thread> setup_thread(int new_tid, thread_entry_point
-entry_point) {
-
+std::unique_ptr<Thread> setup_thread(int new_tid, thread_entry_point entry_point) {
     std::unique_ptr<Thread> new_thread(new Thread());
     new_thread->id = new_tid;
     new_thread->state = READY;
     new_thread->quantum_count = 0;
 
-    address_t sp = (address_t) (new_thread->stack + STACK_SIZE
-                                - sizeof(address_t));
+    new_thread->stack_ptr = new char[STACK_SIZE];
+    address_t sp = (address_t)(new_thread->stack_ptr + STACK_SIZE - sizeof(address_t));
     address_t pc = (address_t) entry_point;
 
-    sigsetjmp(new_thread->env, 1);  // Save the base context
+    sigsetjmp(new_thread->env, 1);
     (new_thread->env->__jmpbuf)[JB_SP] = translate_address(sp);
     (new_thread->env->__jmpbuf)[JB_PC] = translate_address(pc);
     sigemptyset(&new_thread->env->__saved_mask);
