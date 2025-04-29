@@ -61,10 +61,14 @@ address_t translate_address(address_t addr)
 typedef struct Thread {
     int id;
     ThreadState state;
-    char stack[STACK_SIZE];
+    char* stack_ptr;
     sigjmp_buf env;
     int quantum_count; // Number of quanta the thread has run
     // Add more fields later:  context, etc.
+
+    ~Thread() {
+        delete[] stack_ptr;
+    }
 
 } Thread;
 
@@ -172,10 +176,7 @@ int uthread_init(int quantum_usecs) {
     timer.it_value.tv_usec = quantum_usecs;
     timer.it_interval.tv_sec = 0;
     timer.it_interval.tv_usec = quantum_usecs;
-    if (setitimer(ITIMER_VIRTUAL, &timer, NULL) < 0) {
-        std::cerr << SETITIMER_ERROR << std::endl;
-        exit(EXIT_FAILURE);
-    }
+    reset_timer();
 
     return SUCCESS;
 }
@@ -249,18 +250,26 @@ int uthread_terminate(int tid) {
 void self_terminate_thread(int tid) {
     tid_to_delete = running_tid;
     readyQueue.pop();
-    //erase tid_to_delete from hmap:
-    thread_map.erase(tid_to_delete);
+
+    if (readyQueue.empty()) {
+        thread_map.erase(tid_to_delete);
+        std::cerr << "No more threads to schedule after termination.\n";
+        free_allocated_memory();
+        exit(EXIT_SUCCESS);
+    }
 
     quantum_usecs_total++;
+
     running_tid = readyQueue.front();
+
     Thread *running_thread = thread_map[running_tid].get();
     running_thread->state = RUNNING;
     running_thread->quantum_count++;
 
-    reset_timer();
-    siglongjmp(running_thread->env, 1);
+    thread_map.erase(tid_to_delete);
 
+    reset_timer();
+    siglongjmp(running_thread->env, AFTER_CONTEXT_SWITCH);
 }
 
 int uthread_block(int tid) {
@@ -304,6 +313,7 @@ int uthread_block(int tid) {
         readyQueue.pop();
         running_tid = readyQueue.front();
         Thread *running_thread = thread_map[running_tid].get();
+        reset_timer();
         unblock_timer_signal();
         siglongjmp(running_thread->env, 1);
         // no return
@@ -380,6 +390,9 @@ int uthread_get_tid() {
 }
 
 int uthread_get_total_quantums() {
+    block_timer_signal();
+    int total_quantums = quantum_usecs_total;
+    unblock_timer_signal();
     return quantum_usecs_total;
 }
 
@@ -395,8 +408,9 @@ int uthread_get_quantums(int tid) {
         unblock_timer_signal();
         return ERROR;
     }
+    int quantum_count = thread_map[tid]->quantum_count;
     unblock_timer_signal();
-    return thread_map[tid]->quantum_count;
+    return quantum_count;
 
 }
 
@@ -428,6 +442,7 @@ void timer_handler(int sig) {
         running_tid = nextThread->id;
         quantum_usecs_total++;
         nextThread->quantum_count++;
+        reset_timer();
         siglongjmp(nextThread->env, 1);
     }
 
@@ -497,6 +512,7 @@ entry_point) {
 }
 
 void remove_thread_from_ready_queue(int tid) {
+
     std::queue<int> tempQueue;
     while (!readyQueue.empty()) {
         int current_tid = readyQueue.front();
