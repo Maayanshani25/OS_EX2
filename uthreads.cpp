@@ -81,7 +81,6 @@ std::unordered_map<int, int> sleeping_threads;
 static struct itimerval timer;
 sigset_t signal_set;
 
-
 void block_timer_signal();//Tomer
 void unblock_timer_signal();//Tomer
 void remove_thread_from_ready_queue(int tid);
@@ -92,6 +91,7 @@ void timer_handler(int sig);
 
 void alert_sleep_block();
 void reset_timer();
+void self_terminate_thread(int tid);
 /**
  * Prevents delivery of SIGVTALRM by blocking it.
  */
@@ -213,6 +213,7 @@ int uthread_spawn(thread_entry_point entry_point) {
 
 int uthread_terminate(int tid) {
     block_timer_signal();
+
     if (tid < 0 || tid >= MAX_THREAD_NUM) {
         std::cerr << NO_THREAD_ERROR_MESSAGE << std::endl;
         unblock_timer_signal();
@@ -231,19 +232,35 @@ int uthread_terminate(int tid) {
     }
 
     if (tid == running_tid) {
-        tid_to_delete = tid;
+        self_terminate_thread(tid);
         unblock_timer_signal();
-        switch_to_next_thread(false);
-        // doesn't return
+        return 0;
     }
 
+    //if the thread is in ready, remove from ready queue
     if (thread_map[tid]->state == READY) {
         remove_thread_from_ready_queue(tid);
     }
-
+    // remove from all threads
     thread_map.erase(tid);
     unblock_timer_signal();
     return SUCCESS;
+}
+void self_terminate_thread(int tid) {
+    tid_to_delete = running_tid;
+    readyQueue.pop();
+    //erase tid_to_delete from hmap:
+    thread_map.erase(tid_to_delete);
+
+    quantum_usecs_total++;
+    running_tid = readyQueue.front();
+    Thread *running_thread = thread_map[running_tid].get();
+    running_thread->state = RUNNING;
+    running_thread->quantum_count++;
+
+    reset_timer();
+    siglongjmp(running_thread->env, 1);
+
 }
 
 int uthread_block(int tid) {
@@ -272,27 +289,30 @@ int uthread_block(int tid) {
         return ERROR;
     }
 
-    Thread *thread = thread_map[tid].get();
+    Thread *thread_to_block = thread_map[tid].get();
 
     // Already blocked: do nothing
-    if (thread->state == BLOCKED) {
+    if (thread_to_block->state == BLOCKED) {
         unblock_timer_signal();
         return SUCCESS;
     }
 
-    // Case: thread blocks itself
+    // Case: thread_to_block blocks itself
     if (tid == running_tid) {
-        thread->state = BLOCKED;
+        thread_to_block->state = BLOCKED;
         unblock_timer_signal();
-        switch_to_next_thread(true);
+        readyQueue.pop();
+        running_tid = readyQueue.front();
+        Thread *running_thread = thread_map[running_tid].get();
+        unblock_timer_signal();
+        siglongjmp(running_thread->env, 1);
+        // no return
     }
 
-    // Case: blocking another thread that's in READY state
-    if (thread->state == READY) {
-        remove_thread_from_ready_queue(tid);
-    }
-
-    thread->state = BLOCKED;
+    // Case: blocking another thread_to_block that's in READY state
+    //if (thread_to_block->state == READY)
+    remove_thread_from_ready_queue(tid);
+    thread_to_block->state = BLOCKED;
     unblock_timer_signal();
     return SUCCESS;
 }
@@ -345,9 +365,7 @@ int uthread_sleep(int num_quantums) {
 
     // Mark thread as sleeping
     sleeping_threads[running_tid] = num_quantums;
-
-    // Block the running thread
-    thread_map[running_tid]->state = BLOCKED;
+    
     unblock_timer_signal();
     return SUCCESS;
 }
@@ -390,10 +408,28 @@ int uthread_get_quantums(int tid) {
  * @param sig The signal number (not used).
  */
 void timer_handler(int sig) {
+    if (sig != SIGVTALRM) {
+        return;
+    }
 
     block_timer_signal();
+    alert_sleep_block();
+
+    readyQueue.pop();
+    readyQueue.push(running_tid);
+    thread_map[running_tid]->state = READY;
+
+    int new_running_tid = readyQueue.front();
+    auto nextThread = thread_map[new_running_tid].get();
+    nextThread->state = RUNNING;
 
     int ret_val = sigsetjmp(thread_map[running_tid]->env, 1);
+    if (ret_val == 0) {
+        running_tid = nextThread->id;
+        quantum_usecs_total++;
+        nextThread->quantum_count++;
+        siglongjmp(nextThread->env, 1);
+    }
 
     if (ret_val == AFTER_CONTEXT_SWITCH) {
         if (tid_to_delete != -1) {
@@ -402,24 +438,13 @@ void timer_handler(int sig) {
             tid_to_delete = -1;
         }
         unblock_timer_signal();
-        return;
     }
-
-    // otherwise thread_switch is 0, it means the context was saved (not
-    // brought back from context switch)
-    readyQueue.push(running_tid);
-
-    // do scheduling
-    alert_sleep_block();
-    switch_to_next_thread(true);
-    reset_timer();
-    unblock_timer_signal();
-    siglongjmp(thread_map[running_tid]->env, AFTER_CONTEXT_SWITCH);
 }
 
 void reset_timer() {
     if (setitimer(ITIMER_VIRTUAL, &timer, nullptr) == -1) {
         std::cerr << "Failed to reset virtual timer.\n";
+        free_allocated_memory();
         exit(EXIT_FAILURE);
     }
 
@@ -470,19 +495,6 @@ entry_point) {
 
     return new_thread;
 }
-
-/**
- * @brief Switches to the next thread in the ready queue.
- */
-void switch_to_next_thread(bool running) {
-    quantum_usecs_total++;
-    if (running) {
-        readyQueue.pop();
-    }
-    thread_map[readyQueue.front()]->quantum_count++;
-    running_tid = readyQueue.front();
-}
-
 
 void remove_thread_from_ready_queue(int tid) {
     std::queue<int> tempQueue;
