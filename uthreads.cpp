@@ -310,12 +310,29 @@ int uthread_block(int tid) {
     if (tid == running_tid) {
         thread_to_block->state = BLOCKED;
         readyQueue.pop();
-        running_tid = readyQueue.front();
-        Thread *running_thread = thread_map[running_tid].get();
-        reset_timer();
-        unblock_timer_signal();
-        siglongjmp(running_thread->env, 1);
-        // no return
+        int new_running_tid = readyQueue.front();
+        auto nextThread = thread_map[new_running_tid].get();
+        nextThread->state = RUNNING;
+
+        int ret_val = sigsetjmp(thread_map[running_tid]->env, 1);
+        if (ret_val == 0) {
+            running_tid = nextThread->id;
+            quantum_usecs_total++;
+            nextThread->quantum_count++;
+            reset_timer();
+            unblock_timer_signal();
+            siglongjmp(nextThread->env, 1);
+        }
+
+        if (ret_val == AFTER_CONTEXT_SWITCH) {
+            if (tid_to_delete != -1) {
+                thread_map.erase(tid_to_delete); // Now safe
+                available_ids.push(tid_to_delete);
+                tid_to_delete = -1;
+            }
+            unblock_timer_signal();
+        }
+        return SUCCESS; // not reached, here for compiler compatibility
     }
 
     // Case: blocking another thread_to_block that's in READY state
