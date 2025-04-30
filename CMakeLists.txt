@@ -42,5 +42,37 @@ add_executable(test3
         uthreads.h
 )
 
+add_executable(test4
+        uthreads.cpp
+        test4.cpp
+        constants.h
+        uthreads.h
+)
 
+add_executable(test5
+        uthreads.cpp
+        test5.cpp
+        constants.h
+        uthreads.h
+)
 
+add_executable(test6
+        uthreads.cpp
+        test6.cpp
+        constants.h
+        uthreads.h
+)
+
+add_executable(test7
+        uthreads.cpp
+        test7.cpp
+        constants.h
+        uthreads.h
+)
+
+add_executable(test8
+        uthreads.cpp
+        test8.cpp
+        constants.h
+        uthreads.h
+)

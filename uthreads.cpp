@@ -86,10 +86,9 @@ static struct itimerval timer;
 sigset_t signal_set;
 
 void block_timer_signal();//Tomer
-void unblock_timer_signal();//Tomer
+void unblock_timer_signal();
 void remove_thread_from_ready_queue(int tid);
 void free_allocated_memory();
-void switch_to_next_thread(bool running);
 std::unique_ptr<Thread> setup_thread(int tid, thread_entry_point entry_point);
 void timer_handler(int sig);
 
@@ -310,7 +309,6 @@ int uthread_block(int tid) {
     // Case: thread_to_block blocks itself
     if (tid == running_tid) {
         thread_to_block->state = BLOCKED;
-        unblock_timer_signal();
         readyQueue.pop();
         running_tid = readyQueue.front();
         Thread *running_thread = thread_map[running_tid].get();
@@ -352,7 +350,9 @@ int uthread_resume(int tid) {
 
     if (thread->state == BLOCKED) {
         thread->state = READY;
-        readyQueue.push(thread->id);
+        if (sleeping_threads.find(tid) == sleeping_threads.end()) {
+            readyQueue.push(thread->id);
+        }
     }
 
     // If it was already READY or RUNNING, do nothing
@@ -377,34 +377,31 @@ int uthread_sleep(int num_quantums) {
 
     // Register the thread as sleeping
     sleeping_threads[running_tid] = num_quantums;
-    thread_map[running_tid]->state = BLOCKED;
+    thread_map[running_tid]->state = READY;
+    readyQueue.pop();
 
-    // Remove from ready queue
-    if (!readyQueue.empty() && readyQueue.front() == running_tid) {
-        readyQueue.pop();
-    } else {
-        remove_thread_from_ready_queue(running_tid);
+    int new_running_tid = readyQueue.front();
+    auto nextThread = thread_map[new_running_tid].get();
+    nextThread->state = RUNNING;
+
+    int ret_val = sigsetjmp(thread_map[running_tid]->env, 1);
+    if (ret_val == 0) {
+        running_tid = nextThread->id;
+        quantum_usecs_total++;
+        nextThread->quantum_count++;
+        reset_timer();
+        unblock_timer_signal();
+        siglongjmp(nextThread->env, 1);
     }
 
-    // No other threads to run
-    if (readyQueue.empty()) {
-        std::cerr << "No threads to schedule after sleep." << std::endl;
-        free_allocated_memory();
-        exit(EXIT_SUCCESS);
+    if (ret_val == AFTER_CONTEXT_SWITCH) {
+        if (tid_to_delete != -1) {
+            thread_map.erase(tid_to_delete); // Now safe
+            available_ids.push(tid_to_delete);
+            tid_to_delete = -1;
+        }
+        unblock_timer_signal();
     }
-
-    // Switch to next thread
-    int next_tid = readyQueue.front();
-    Thread* next_thread = thread_map[next_tid].get();
-    next_thread->state = RUNNING;
-    running_tid = next_tid;
-    quantum_usecs_total++;
-    next_thread->quantum_count++;
-
-    reset_timer();
-    unblock_timer_signal();
-    siglongjmp(next_thread->env, AFTER_CONTEXT_SWITCH);
-
     return SUCCESS; // not reached, here for compiler compatibility
 }
 
@@ -498,7 +495,7 @@ void alert_sleep_block() {
     std::vector<int> threads_to_wake;
     for (auto &entry: sleeping_threads) {
         entry.second--;
-        if (entry.second <= 0) {
+        if (entry.second <= 0 && thread_map[entry.first]->state == READY) {
             threads_to_wake.push_back(entry.first);
         }
     }
