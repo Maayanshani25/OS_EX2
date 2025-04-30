@@ -19,3 +19,28 @@ add_executable(test2_two_thread
         constants.h
         uthreads.h
 )
+
+add_executable(test1
+        uthreads.cpp
+        test1.cpp
+        constants.h
+        uthreads.h
+)
+
+add_executable(test2
+        uthreads.cpp
+        test2.cpp
+        constants.h
+        uthreads.h
+)
+
+
+add_executable(test3
+        uthreads.cpp
+        test3.cpp
+        constants.h
+        uthreads.h
+)
+
+
+

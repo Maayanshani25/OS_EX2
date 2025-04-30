@@ -269,6 +269,7 @@ void self_terminate_thread(int tid) {
     thread_map.erase(tid_to_delete);
 
     reset_timer();
+    unblock_timer_signal();
     siglongjmp(running_thread->env, AFTER_CONTEXT_SWITCH);
 }
 
@@ -361,6 +362,7 @@ int uthread_resume(int tid) {
 
 int uthread_sleep(int num_quantums) {
     block_timer_signal();
+
     if (num_quantums <= 0) {
         std::cerr << NUM_QUANTUMS_ERROR << std::endl;
         unblock_timer_signal();
@@ -373,11 +375,37 @@ int uthread_sleep(int num_quantums) {
         return ERROR;
     }
 
-    // Mark thread as sleeping
+    // Register the thread as sleeping
     sleeping_threads[running_tid] = num_quantums;
-    
+    thread_map[running_tid]->state = BLOCKED;
+
+    // Remove from ready queue
+    if (!readyQueue.empty() && readyQueue.front() == running_tid) {
+        readyQueue.pop();
+    } else {
+        remove_thread_from_ready_queue(running_tid);
+    }
+
+    // No other threads to run
+    if (readyQueue.empty()) {
+        std::cerr << "No threads to schedule after sleep." << std::endl;
+        free_allocated_memory();
+        exit(EXIT_SUCCESS);
+    }
+
+    // Switch to next thread
+    int next_tid = readyQueue.front();
+    Thread* next_thread = thread_map[next_tid].get();
+    next_thread->state = RUNNING;
+    running_tid = next_tid;
+    quantum_usecs_total++;
+    next_thread->quantum_count++;
+
+    reset_timer();
     unblock_timer_signal();
-    return SUCCESS;
+    siglongjmp(next_thread->env, AFTER_CONTEXT_SWITCH);
+
+    return SUCCESS; // not reached, here for compiler compatibility
 }
 
 void free_allocated_memory() {
