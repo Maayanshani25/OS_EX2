@@ -126,6 +126,7 @@ void init_signal_mask() {
  * Re-enables SIGVTALRM delivery by unblocking it.
  */
 void unblock_timer_signal() {
+
     int unmasking_failed =
         sigprocmask(SIG_UNBLOCK, &signal_set, nullptr) == -1;
     if (unmasking_failed) {
@@ -250,6 +251,7 @@ void self_terminate_thread(int tid) {
     tid_to_delete = running_tid;
     readyQueue.pop();
 
+    //TODO: remove before submition
     if (readyQueue.empty()) {
         thread_map.erase(tid_to_delete);
         std::cerr << "No more threads to schedule after termination.\n";
@@ -258,14 +260,11 @@ void self_terminate_thread(int tid) {
     }
 
     quantum_usecs_total++;
-
     running_tid = readyQueue.front();
 
     Thread *running_thread = thread_map[running_tid].get();
     running_thread->state = RUNNING;
     running_thread->quantum_count++;
-
-    thread_map.erase(tid_to_delete);
 
     reset_timer();
     unblock_timer_signal();
@@ -423,9 +422,22 @@ int uthread_sleep(int num_quantums) {
 }
 
 void free_allocated_memory() {
-    // Free all threads
-    thread_map.clear();
+    // Free all threads, and ensure we properly clear any references
+    thread_map.clear();  // Clear the thread map after freeing memory
+
+    // Clear sleeping threads as well, if any thread is still in sleeping state
+    sleeping_threads.clear();
+
+    // Ensure no lingering resources are left (like queues)
+    while (!readyQueue.empty()) {
+        readyQueue.pop();
+    }
+
+    while(!available_ids.empty()){
+        available_ids.pop();
+    }
 }
+
 
 int uthread_get_tid() {
     return running_tid;

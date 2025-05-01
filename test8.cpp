@@ -2,9 +2,8 @@
 
 int main() {
   std::string command = "g++ -std=c++11 -fsanitize=address "
-                        "-fno-omit-frame-pointer -g uthreads.cpp DoNotRunThis2"
-                        ".cpp -o "
-                        "test_asan";
+                        "-fno-omit-frame-pointer -g ../uthreads.cpp "
+                        "../DoNotRunThis2.cpp -o test_asan";
   if (system(command.c_str()) != 0)
   {
     printf ("Failed to run test (it doesn't mean you failed the test)\n");
