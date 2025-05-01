@@ -64,7 +64,6 @@ typedef struct Thread {
     char* stack_ptr;
     sigjmp_buf env;
     int quantum_count; // Number of quanta the thread has run
-    // Add more fields later:  context, etc.
 
     ~Thread() {
         delete[] stack_ptr;
@@ -88,7 +87,6 @@ sigset_t signal_set;
 void block_timer_signal();//Tomer
 void unblock_timer_signal();
 void remove_thread_from_ready_queue(int tid);
-void free_allocated_memory();
 std::unique_ptr<Thread> setup_thread(int tid, thread_entry_point entry_point);
 void timer_handler(int sig);
 
@@ -102,7 +100,6 @@ void block_timer_signal() {
     int masking_success = sigprocmask(SIG_BLOCK, &signal_set, nullptr) == -1;
     if (masking_success) {
         std::cerr << "Failed to block timer signal.\n";
-        free_allocated_memory();
         exit(EXIT_FAILURE);
     }
 }
@@ -131,7 +128,6 @@ void unblock_timer_signal() {
         sigprocmask(SIG_UNBLOCK, &signal_set, nullptr) == -1;
     if (unmasking_failed) {
         std::cerr << "Failed to unblock timer signal.\n";
-        free_allocated_memory();
         exit(EXIT_FAILURE);
     }
 }
@@ -227,7 +223,6 @@ int uthread_terminate(int tid) {
     }
 
     if (tid == MAIN_THREAD_ID) {
-        free_allocated_memory();
         unblock_timer_signal();
         exit(EXIT_SUCCESS);
     }
@@ -255,7 +250,6 @@ void self_terminate_thread(int tid) {
     if (readyQueue.empty()) {
         thread_map.erase(tid_to_delete);
         std::cerr << "No more threads to schedule after termination.\n";
-        free_allocated_memory();
         exit(EXIT_SUCCESS);
     }
 
@@ -421,24 +415,6 @@ int uthread_sleep(int num_quantums) {
     return SUCCESS; // not reached, here for compiler compatibility
 }
 
-void free_allocated_memory() {
-    // Free all threads, and ensure we properly clear any references
-    thread_map.clear();  // Clear the thread map after freeing memory
-
-    // Clear sleeping threads as well, if any thread is still in sleeping state
-    sleeping_threads.clear();
-
-    // Ensure no lingering resources are left (like queues)
-    while (!readyQueue.empty()) {
-        readyQueue.pop();
-    }
-
-    while(!available_ids.empty()){
-        available_ids.pop();
-    }
-}
-
-
 int uthread_get_tid() {
     return running_tid;
 }
@@ -513,7 +489,6 @@ void timer_handler(int sig) {
 void reset_timer() {
     if (setitimer(ITIMER_VIRTUAL, &timer, nullptr) == -1) {
         std::cerr << "Failed to reset virtual timer.\n";
-        free_allocated_memory();
         exit(EXIT_FAILURE);
     }
 
