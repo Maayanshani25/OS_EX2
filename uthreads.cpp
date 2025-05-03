@@ -421,7 +421,6 @@ int uthread_get_tid() {
 
 int uthread_get_total_quantums() {
     block_timer_signal();
-    int total_quantums = quantum_usecs_total;
     unblock_timer_signal();
     return quantum_usecs_total;
 }
