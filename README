@@ -1,0 +1,75 @@
+tomerbuber, maayanshani
+209579523, 319111886
+EX: 2
+
+FILES:
+constants.cpp -- constants for the program
+uthread.cpp -- user-level thread implementation
+
+
+REMARKS:
+OS ex2, had a great time.
+
+ANSWERS:
+
+1. siglongjmp and sigsetjmp:
+
+a.
+`sigsetjmp` saves the current execution state of the program (including
+registers, stack pointer, and program counter) into a buffer so the program
+can return to this point later.
+`siglongjmp` restores the saved state and jumps back to that saved point,
+as if `sigsetjmp` had just returned.
+
+b.
+If `sigsetjmp` is called with a non-zero second argument, it saves the signal
+mask. `siglongjmp` then restores both the program state and signal mask.
+If zero is passed, only the program state is saved and restored.
+
+---
+
+2. User-level threads:
+
+User-level threads are useful in apps like web browsers, where many tasks
+(like loading tabs) run at once. They're a good choice because they're fast to
+create and switch between, without needing help from the operating system.
+
+---
+
+3. Chrome’s per-tab process model:
+
+Advantages:
+- Each tab runs in its own process, so if one tab crashes or hangs,
+    it doesn’t affect the others.
+- Improves security, since each process is isolated.
+- Each process can run on a different CPU core, allowing real parallelism.
+
+Disadvantages:
+- Processes use more memory than threads because each has its own memory space.
+- More overhead in creating and switching processes compared to threads.
+- Communication between processes is more complex and slower than between threads.
+
+---
+
+4. Interrupts and signals:
+
+When you type `kill pid`, the shell sends a signal (usually `SIGTERM`) to the
+app’s process ID. The OS delivers this signal. The app can choose to handle it
+(e.g. save data) or just terminate. No keyboard interrupt is involved here —
+the signal is triggered by the command in the shell, not by a key like Ctrl+C.
+
+---
+
+5. Real vs. virtual time:
+
+- Real time is the total time from when a program starts running to when it
+    finishes, including waiting for I/O or other delays.
+- Virtual time is the time the process spends using the CPU (ignores waiting/
+    sleeping).
+
+Example of real time: A program that sleeps for 5 seconds has 5 seconds of
+    real time.
+Example of virtual time: A program that calculates for 2 seconds and then
+    sleeps for 3 seconds has 2 seconds of virtual time.
+
+--- 
