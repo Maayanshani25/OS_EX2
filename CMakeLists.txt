@@ -50,10 +50,9 @@ add_executable(test4
 )
 
 add_executable(test5
-        uthreads.cpp
+
         test5.cpp
-        constants.h
-        uthreads.h
+
 )
 
 add_executable(test6
@@ -71,8 +70,7 @@ add_executable(test7
 )
 
 add_executable(test8
-        uthreads.cpp
+    
         test8.cpp
-        constants.h
-        uthreads.h
+
 )
