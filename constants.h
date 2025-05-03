@@ -28,7 +28,12 @@ typedef enum {
 #define NUM_QUANTUMS_ERROR "thread library error: number of quantums must be positive.\n"
 #define MAIN_THREAD_SLEEP_ERROR "thread library error: main thread cannot call sleep.\n"
 #define SIGACTION_ERROR "system error: sigaction failed.\n"
-#define SETITIMER_ERROR "Error: setitimer failed.\n"
+#define SIGSETCLEAR_ERROR "system error: Could not clear signal set.\n"
+#define SIGADD_ERROR "system error: Failed to add SIGVTALRM to signal set.\n"
+#define SETITIMER_ERROR "system error: setitimer failed.\n"
+#define SIGNALBLOCK_ERROR "system error: signal blocking failed.\n"
+#define SIGNALUNBLOCK_ERROR "system error: signal unblocking failed.\n"
+
 
 
 #endif // CONSTANTS_H

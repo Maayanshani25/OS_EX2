@@ -102,7 +102,7 @@ void block_timer_signal() {
     int masking_success = sigprocmask(SIG_BLOCK, &signal_set,
                                       nullptr) == -1;
     if (masking_success) {
-        std::cerr << "Failed to block timer signal.\n";
+        std::cerr << SIGNALBLOCK_ERROR;
         exit(EXIT_FAILURE);
     }
 }
@@ -112,12 +112,12 @@ void block_timer_signal() {
  */
 void init_signal_mask() {
     if (sigemptyset(&signal_set) == -1) {
-        std::cerr << "Error: Could not clear signal set.\n";
+        std::cerr << SIGSETCLEAR_ERROR;
         exit(EXIT_FAILURE);
     }
 
     if (sigaddset(&signal_set, SIGVTALRM) == -1) {
-        std::cerr << "Error: Failed to add SIGVTALRM to signal set.\n";
+        std::cerr << SIGADD_ERROR;
         exit(EXIT_FAILURE);
     }
 }
@@ -130,7 +130,7 @@ void unblock_timer_signal() {
     int unmasking_failed =
         sigprocmask(SIG_UNBLOCK, &signal_set, nullptr) == -1;
     if (unmasking_failed) {
-        std::cerr << "Failed to unblock timer signal.\n";
+        std::cerr << SIGNALUNBLOCK_ERROR;
         exit(EXIT_FAILURE);
     }
 }
@@ -432,7 +432,7 @@ void timer_handler(int sig) {
  */
 void reset_timer() {
     if (setitimer(ITIMER_VIRTUAL, &timer, nullptr) == -1) {
-        std::cerr << "Failed to reset virtual timer.\n";
+        std::cerr << SETITIMER_ERROR;
         exit(EXIT_FAILURE);
     }
 }
